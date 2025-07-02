@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: bitnami/postgresql:17.4.0
+    container_name: sql-history-postgres
+    environment:
+      POSTGRESQL_USERNAME: testuser
+      POSTGRESQL_PASSWORD: testpass
+      POSTGRESQL_DATABASE: testdb
+      POSTGRESQL_POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
