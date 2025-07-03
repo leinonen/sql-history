@@ -58,6 +58,11 @@ SELECT * FROM users_history
 WHERE valid_from <= '2024-01-01 12:00:00' 
   AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
   AND operation != 'D';
+
+-- View current active records
+SELECT * FROM users_history 
+WHERE valid_to IS NULL 
+  AND operation != 'D';
 ```
 
 ## Foreign Key Support

@@ -140,22 +140,7 @@ func GetPrimaryKeyColumns(table Table) []string {
 }
 
 func GeneratePointInTimeQuery(table Table) string {
-	historyTableName := GetHistoryTableName(table)
-	originalTableName := GetOriginalTableName(table)
-
-	return fmt.Sprintf(`-- Example: Query %s state at a specific point in time
--- Replace '2024-01-01 12:00:00' with your desired timestamp
-SELECT * FROM %s 
-WHERE valid_from <= '2024-01-01 12:00:00' 
-  AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
-  AND operation != 'D';
-
--- Example: Query %s state as of now (current active records)
-SELECT * FROM %s 
-WHERE valid_to IS NULL 
-  AND operation != 'D';
-
-`, originalTableName, historyTableName, originalTableName, historyTableName)
+	return ""
 }
 
 func GetHistoryTableName(table Table) string {
@@ -206,16 +191,8 @@ func GenerateHistorySQL(tables []Table) (string, error) {
 		triggers := GenerateTriggers(table)
 		sb.WriteString(triggers)
 
-		pointInTimeQuery := GeneratePointInTimeQuery(table)
-		sb.WriteString(pointInTimeQuery)
 	}
 
-	sb.WriteString("\n-- Usage Examples:\n")
-	sb.WriteString("-- 1. The history tables automatically track all changes via triggers\n")
-	sb.WriteString("-- 2. Use the point-in-time queries above to view data as it existed at any timestamp\n")
-	sb.WriteString("-- 3. The 'operation' column indicates: 'I'=Insert, 'U'=Update, 'D'=Delete\n")
-	sb.WriteString("-- 4. valid_from shows when the record became active\n")
-	sb.WriteString("-- 5. valid_to shows when the record was superseded (NULL = still active)\n")
 
 	return sb.String(), nil
 }
