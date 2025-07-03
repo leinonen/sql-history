@@ -134,3 +134,7 @@ SELECT set_config('app.current_user', 'john.doe', false);
 - PostgreSQL only (uses PL/pgSQL)
 - Basic SQL parsing (common CREATE TABLE patterns)
 - Cascading deletes don't trigger history recording (PostgreSQL behavior)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
