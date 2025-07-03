@@ -37,6 +37,22 @@ func TestIntegration(t *testing.T) {
 	t.Run("ForeignKeySupport", func(t *testing.T) {
 		testForeignKeySupport(t, ctx, conn)
 	})
+
+	t.Run("UserTrackingCurrentUser", func(t *testing.T) {
+		testUserTrackingCurrentUser(t, ctx, conn)
+	})
+
+	t.Run("UserTrackingSession", func(t *testing.T) {
+		testUserTrackingSession(t, ctx, conn)
+	})
+
+	t.Run("UserTrackingWithSchema", func(t *testing.T) {
+		testUserTrackingWithSchema(t, ctx, conn)
+	})
+
+	t.Run("UserTrackingWithForeignKeys", func(t *testing.T) {
+		testUserTrackingWithForeignKeys(t, ctx, conn)
+	})
 }
 
 func connectToTestDB(ctx context.Context) (*pgx.Conn, error) {
@@ -94,13 +110,14 @@ func testBasicHistoryTracking(t *testing.T, ctx context.Context, conn *pgx.Conn)
 		t.Fatalf("Expected 1 table, got %d", len(tables))
 	}
 
-	historySQL := parser.GenerateHistoryTable(tables[0])
+	config := parser.Config{TrackUser: false, UserSource: "current_user"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
 	_, err = conn.Exec(ctx, historySQL)
 	if err != nil {
 		t.Fatalf("Failed to create history table: %v", err)
 	}
 
-	triggersSQL := parser.GenerateTriggers(tables[0])
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
 	_, err = conn.Exec(ctx, triggersSQL)
 	if err != nil {
 		t.Fatalf("Failed to create triggers: %v", err)
@@ -192,13 +209,14 @@ func testSchemaSupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 		t.Fatalf("Expected table test_schema.products, got %s.%s", tables[0].SchemaName, tables[0].Name)
 	}
 
-	historySQL := parser.GenerateHistoryTable(tables[0])
+	config := parser.Config{TrackUser: false, UserSource: "current_user"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
 	_, err = conn.Exec(ctx, historySQL)
 	if err != nil {
 		t.Fatalf("Failed to create history table with schema: %v", err)
 	}
 
-	triggersSQL := parser.GenerateTriggers(tables[0])
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
 	_, err = conn.Exec(ctx, triggersSQL)
 	if err != nil {
 		t.Fatalf("Failed to create triggers with schema: %v", err)
@@ -247,13 +265,14 @@ func testPointInTimeQueries(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 		t.Fatalf("Failed to parse timeline test tables: %v", err)
 	}
 
-	historySQL := parser.GenerateHistoryTable(tables[0])
+	config := parser.Config{TrackUser: false, UserSource: "current_user"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
 	_, err = conn.Exec(ctx, historySQL)
 	if err != nil {
 		t.Fatalf("Failed to create timeline history table: %v", err)
 	}
 
-	triggersSQL := parser.GenerateTriggers(tables[0])
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
 	_, err = conn.Exec(ctx, triggersSQL)
 	if err != nil {
 		t.Fatalf("Failed to create timeline triggers: %v", err)
@@ -420,25 +439,26 @@ func testForeignKeySupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	}
 
 	// Create history tables and triggers for both tables
-	usersHistorySQL := parser.GenerateHistoryTable(usersTable)
+	config := parser.Config{TrackUser: false, UserSource: "current_user"}
+	usersHistorySQL := parser.GenerateHistoryTable(usersTable, config)
 	_, err = conn.Exec(ctx, usersHistorySQL)
 	if err != nil {
 		t.Fatalf("Failed to create users history table: %v", err)
 	}
 
-	usersTriggersSQL := parser.GenerateTriggers(usersTable)
+	usersTriggersSQL := parser.GenerateTriggers(usersTable, config)
 	_, err = conn.Exec(ctx, usersTriggersSQL)
 	if err != nil {
 		t.Fatalf("Failed to create users triggers: %v", err)
 	}
 
-	ordersHistorySQL := parser.GenerateHistoryTable(ordersTable)
+	ordersHistorySQL := parser.GenerateHistoryTable(ordersTable, config)
 	_, err = conn.Exec(ctx, ordersHistorySQL)
 	if err != nil {
 		t.Fatalf("Failed to create orders history table: %v", err)
 	}
 
-	ordersTriggersSQL := parser.GenerateTriggers(ordersTable)
+	ordersTriggersSQL := parser.GenerateTriggers(ordersTable, config)
 	_, err = conn.Exec(ctx, ordersTriggersSQL)
 	if err != nil {
 		t.Fatalf("Failed to create orders triggers: %v", err)
@@ -528,4 +548,608 @@ func testForeignKeySupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 
 	// Note: No delete history record is expected for cascaded deletes as PostgreSQL
 	// doesn't fire user triggers for cascading actions. This is expected behavior.
+}
+
+func testUserTrackingCurrentUser(t *testing.T, ctx context.Context, conn *pgx.Conn) {
+	cleanup := func() {
+		conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test_history CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_insert_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_update_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_delete_history() CASCADE")
+	}
+	cleanup()
+	defer cleanup()
+
+	originalSQL := `
+	CREATE TABLE user_tracking_test (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(50) NOT NULL,
+		value INTEGER NOT NULL
+	);`
+
+	_, err := conn.Exec(ctx, originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to create user tracking test table: %v", err)
+	}
+
+	tables, err := parser.ParseCreateTables(originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to parse user tracking test tables: %v", err)
+	}
+
+	if len(tables) != 1 {
+		t.Fatalf("Expected 1 table, got %d", len(tables))
+	}
+
+	// Test with user tracking enabled using current_user
+	config := parser.Config{TrackUser: true, UserSource: "current_user"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
+	_, err = conn.Exec(ctx, historySQL)
+	if err != nil {
+		t.Fatalf("Failed to create user tracking history table: %v", err)
+	}
+
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
+	t.Logf("Generated triggers SQL:\n%s", triggersSQL)
+	_, err = conn.Exec(ctx, triggersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create user tracking triggers: %v", err)
+	}
+
+	// Insert test data
+	_, err = conn.Exec(ctx, "INSERT INTO user_tracking_test (name, value) VALUES ($1, $2)", "test_record", 42)
+	if err != nil {
+		t.Fatalf("Failed to insert test data: %v", err)
+	}
+
+	// Verify insert was tracked with user
+	var insertUser string
+	var operation string
+	err = conn.QueryRow(ctx, "SELECT changed_by, operation FROM user_tracking_test_history WHERE operation = 'I'").Scan(&insertUser, &operation)
+	if err != nil {
+		t.Fatalf("Failed to query insert tracking: %v", err)
+	}
+
+	if operation != "I" {
+		t.Errorf("Expected operation 'I', got '%s'", operation)
+	}
+
+	if insertUser == "" {
+		t.Error("Expected changed_by to be populated for insert")
+	}
+
+	// Update test data
+	result, err := conn.Exec(ctx, "UPDATE user_tracking_test SET value = $1 WHERE name = $2", 84, "test_record")
+	if err != nil {
+		t.Fatalf("Failed to update test data: %v", err)
+	}
+	rowsAffected := result.RowsAffected()
+	t.Logf("UPDATE affected %d rows", rowsAffected)
+	
+	if rowsAffected == 0 {
+		t.Fatal("UPDATE affected 0 rows - this suggests the WHERE clause didn't match any records")
+	}
+
+	// Debug: Check records after UPDATE
+	var recordCountAfterUpdate int
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM user_tracking_test_history").Scan(&recordCountAfterUpdate)
+	if err != nil {
+		t.Fatalf("Failed to count records after update: %v", err)
+	}
+	t.Logf("Records in history after UPDATE: %d", recordCountAfterUpdate)
+	
+	// Debug: Show all records with their details after UPDATE
+	rows2, err := conn.Query(ctx, "SELECT operation, changed_by, COALESCE(valid_to::text, 'NULL') FROM user_tracking_test_history ORDER BY valid_from")
+	if err != nil {
+		t.Fatalf("Failed to query all records after update: %v", err)
+	}
+	defer rows2.Close()
+	
+	recordCount2 := 0
+	for rows2.Next() {
+		var op, user, validToStr string
+		if err := rows2.Scan(&op, &user, &validToStr); err != nil {
+			t.Fatalf("Failed to scan record after update: %v", err)
+		}
+		t.Logf("After UPDATE - Record %d: operation=%s, changed_by=%s, valid_to=%s", recordCount2+1, op, user, validToStr)
+		recordCount2++
+	}
+
+	// Verify update was tracked with user
+	var updateUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM user_tracking_test_history WHERE operation = 'U'").Scan(&updateUser)
+	if err != nil {
+		t.Fatalf("Failed to query update tracking: %v", err)
+	}
+
+	if updateUser == "" {
+		t.Error("Expected changed_by to be populated for update")
+	}
+
+	if insertUser != updateUser {
+		t.Errorf("Expected same user for insert and update, got '%s' and '%s'", insertUser, updateUser)
+	}
+
+	// Delete test data
+	_, err = conn.Exec(ctx, "DELETE FROM user_tracking_test WHERE name = $1", "test_record")
+	if err != nil {
+		t.Fatalf("Failed to delete test data: %v", err)
+	}
+
+	// Verify delete was tracked with user
+	var deleteUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM user_tracking_test_history WHERE operation = 'D'").Scan(&deleteUser)
+	if err != nil {
+		t.Fatalf("Failed to query delete tracking: %v", err)
+	}
+
+	if deleteUser == "" {
+		t.Error("Expected changed_by to be populated for delete")
+	}
+
+	if insertUser != deleteUser {
+		t.Errorf("Expected same user for insert and delete, got '%s' and '%s'", insertUser, deleteUser)
+	}
+
+	// Debug: let's see what records we actually have
+	rows, err := conn.Query(ctx, "SELECT operation, changed_by FROM user_tracking_test_history ORDER BY valid_from")
+	if err != nil {
+		t.Fatalf("Failed to query all records: %v", err)
+	}
+	defer rows.Close()
+	
+	recordCount := 0
+	for rows.Next() {
+		var op, user string
+		if err := rows.Scan(&op, &user); err != nil {
+			t.Fatalf("Failed to scan record: %v", err)
+		}
+		t.Logf("Record %d: operation=%s, changed_by=%s", recordCount+1, op, user)
+		recordCount++
+	}
+	
+	// Verify all operations have consistent user tracking
+	var insertCount, updateCount, deleteCount int
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM user_tracking_test_history WHERE operation = 'I' AND changed_by = $1", insertUser).Scan(&insertCount)
+	if err != nil {
+		t.Fatalf("Failed to count insert records: %v", err)
+	}
+	
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM user_tracking_test_history WHERE operation = 'U' AND changed_by = $1", insertUser).Scan(&updateCount)
+	if err != nil {
+		t.Fatalf("Failed to count update records: %v", err)
+	}
+	
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM user_tracking_test_history WHERE operation = 'D' AND changed_by = $1", insertUser).Scan(&deleteCount)
+	if err != nil {
+		t.Fatalf("Failed to count delete records: %v", err)
+	}
+
+	if insertCount != 1 {
+		t.Errorf("Expected 1 insert record, got %d", insertCount)
+	}
+	if updateCount != 1 {
+		t.Errorf("Expected 1 update record, got %d", updateCount)
+	}
+	if deleteCount != 1 {
+		t.Errorf("Expected 1 delete record, got %d", deleteCount)
+	}
+}
+
+func testUserTrackingSession(t *testing.T, ctx context.Context, conn *pgx.Conn) {
+	cleanup := func() {
+		conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test_history CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_insert_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_update_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_delete_history() CASCADE")
+	}
+	cleanup()
+	defer cleanup()
+
+	originalSQL := `
+	CREATE TABLE session_tracking_test (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(50) NOT NULL,
+		description TEXT
+	);`
+
+	_, err := conn.Exec(ctx, originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to create session tracking test table: %v", err)
+	}
+
+	tables, err := parser.ParseCreateTables(originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to parse session tracking test tables: %v", err)
+	}
+
+	if len(tables) != 1 {
+		t.Fatalf("Expected 1 table, got %d", len(tables))
+	}
+
+	// Test with user tracking enabled using session variables
+	config := parser.Config{TrackUser: true, UserSource: "session"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
+	_, err = conn.Exec(ctx, historySQL)
+	if err != nil {
+		t.Fatalf("Failed to create session tracking history table: %v", err)
+	}
+
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
+	_, err = conn.Exec(ctx, triggersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create session tracking triggers: %v", err)
+	}
+
+	// Test with no session variable set (should fall back to current_user)
+	_, err = conn.Exec(ctx, "INSERT INTO session_tracking_test (name, description) VALUES ($1, $2)", "fallback_test", "Should use current_user")
+	if err != nil {
+		t.Fatalf("Failed to insert fallback test data: %v", err)
+	}
+
+	var fallbackUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM session_tracking_test_history WHERE name = 'fallback_test'").Scan(&fallbackUser)
+	if err != nil {
+		t.Fatalf("Failed to query fallback tracking: %v", err)
+	}
+
+	if fallbackUser == "" {
+		t.Error("Expected changed_by to be populated with fallback user")
+	}
+
+	// Set session variable and test
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'john.doe@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to set session variable: %v", err)
+	}
+
+	_, err = conn.Exec(ctx, "INSERT INTO session_tracking_test (name, description) VALUES ($1, $2)", "session_test", "Should use session variable")
+	if err != nil {
+		t.Fatalf("Failed to insert session test data: %v", err)
+	}
+
+	var sessionUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM session_tracking_test_history WHERE name = 'session_test'").Scan(&sessionUser)
+	if err != nil {
+		t.Fatalf("Failed to query session tracking: %v", err)
+	}
+
+	if sessionUser != "john.doe@company.com" {
+		t.Errorf("Expected changed_by to be 'john.doe@company.com', got '%s'", sessionUser)
+	}
+
+	// Change session user and test update
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'jane.smith@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to change session variable: %v", err)
+	}
+
+	_, err = conn.Exec(ctx, "UPDATE session_tracking_test SET description = $1 WHERE name = $2", "Updated by Jane", "session_test")
+	if err != nil {
+		t.Fatalf("Failed to update session test data: %v", err)
+	}
+
+	var updateUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM session_tracking_test_history WHERE operation = 'U'").Scan(&updateUser)
+	if err != nil {
+		t.Fatalf("Failed to query session update tracking: %v", err)
+	}
+
+	if updateUser != "jane.smith@company.com" {
+		t.Errorf("Expected update changed_by to be 'jane.smith@company.com', got '%s'", updateUser)
+	}
+
+	// Test delete with different user
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'admin@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to change session variable for delete: %v", err)
+	}
+
+	_, err = conn.Exec(ctx, "DELETE FROM session_tracking_test WHERE name = $1", "session_test")
+	if err != nil {
+		t.Fatalf("Failed to delete session test data: %v", err)
+	}
+
+	var deleteUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM session_tracking_test_history WHERE operation = 'D'").Scan(&deleteUser)
+	if err != nil {
+		t.Fatalf("Failed to query session delete tracking: %v", err)
+	}
+
+	if deleteUser != "admin@company.com" {
+		t.Errorf("Expected delete changed_by to be 'admin@company.com', got '%s'", deleteUser)
+	}
+
+	// Verify we have different users for different operations
+	var distinctUsers int
+	err = conn.QueryRow(ctx, "SELECT COUNT(DISTINCT changed_by) FROM session_tracking_test_history").Scan(&distinctUsers)
+	if err != nil {
+		t.Fatalf("Failed to count distinct users: %v", err)
+	}
+
+	if distinctUsers < 3 {
+		t.Errorf("Expected at least 3 distinct users in tracking, got %d", distinctUsers)
+	}
+}
+
+func testUserTrackingWithSchema(t *testing.T, ctx context.Context, conn *pgx.Conn) {
+	cleanup := func() {
+		conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test_history CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test CASCADE")
+		conn.Exec(ctx, "DROP SCHEMA IF EXISTS tracking_schema CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_insert_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_update_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_delete_history() CASCADE")
+	}
+	cleanup()
+	defer cleanup()
+
+	_, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS tracking_schema")
+	if err != nil {
+		t.Fatalf("Failed to create tracking schema: %v", err)
+	}
+
+	originalSQL := `
+	CREATE TABLE tracking_schema.schema_test (
+		id SERIAL PRIMARY KEY,
+		data VARCHAR(100) NOT NULL,
+		status VARCHAR(20) DEFAULT 'active'
+	);`
+
+	_, err = conn.Exec(ctx, originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to create schema table: %v", err)
+	}
+
+	tables, err := parser.ParseCreateTables(originalSQL)
+	if err != nil {
+		t.Fatalf("Failed to parse schema tables: %v", err)
+	}
+
+	if len(tables) != 1 {
+		t.Fatalf("Expected 1 table, got %d", len(tables))
+	}
+
+	if tables[0].SchemaName != "tracking_schema" || tables[0].Name != "schema_test" {
+		t.Fatalf("Expected table tracking_schema.schema_test, got %s.%s", tables[0].SchemaName, tables[0].Name)
+	}
+
+	// Test user tracking with schema-qualified tables
+	config := parser.Config{TrackUser: true, UserSource: "current_user"}
+	historySQL := parser.GenerateHistoryTable(tables[0], config)
+	_, err = conn.Exec(ctx, historySQL)
+	if err != nil {
+		t.Fatalf("Failed to create schema history table: %v", err)
+	}
+
+	triggersSQL := parser.GenerateTriggers(tables[0], config)
+	_, err = conn.Exec(ctx, triggersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create schema triggers: %v", err)
+	}
+
+	// Insert data and verify user tracking works with schema
+	_, err = conn.Exec(ctx, "INSERT INTO tracking_schema.schema_test (data, status) VALUES ($1, $2)", "schema_data", "active")
+	if err != nil {
+		t.Fatalf("Failed to insert schema test data: %v", err)
+	}
+
+	var changedBy string
+	var operation string
+	err = conn.QueryRow(ctx, "SELECT changed_by, operation FROM tracking_schema.schema_test_history WHERE operation = 'I'").Scan(&changedBy, &operation)
+	if err != nil {
+		t.Fatalf("Failed to query schema tracking: %v", err)
+	}
+
+	if operation != "I" {
+		t.Errorf("Expected operation 'I', got '%s'", operation)
+	}
+
+	if changedBy == "" {
+		t.Error("Expected changed_by to be populated for schema table")
+	}
+
+	// Update and verify
+	_, err = conn.Exec(ctx, "UPDATE tracking_schema.schema_test SET status = $1 WHERE data = $2", "updated", "schema_data")
+	if err != nil {
+		t.Fatalf("Failed to update schema test data: %v", err)
+	}
+
+	var updateCount int
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM tracking_schema.schema_test_history WHERE operation = 'U' AND changed_by = $1", changedBy).Scan(&updateCount)
+	if err != nil {
+		t.Fatalf("Failed to count schema updates: %v", err)
+	}
+
+	if updateCount != 1 {
+		t.Errorf("Expected 1 update record with user tracking in schema, got %d", updateCount)
+	}
+}
+
+func testUserTrackingWithForeignKeys(t *testing.T, ctx context.Context, conn *pgx.Conn) {
+	cleanup := func() {
+		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders_history CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers_history CASCADE")
+		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_insert_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_update_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_delete_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_insert_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_update_history() CASCADE")
+		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_delete_history() CASCADE")
+	}
+	cleanup()
+	defer cleanup()
+
+	// Create parent table
+	customersSQL := `
+	CREATE TABLE fk_user_customers (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(100) NOT NULL,
+		email VARCHAR(100) NOT NULL UNIQUE
+	);`
+
+	_, err := conn.Exec(ctx, customersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create customers table: %v", err)
+	}
+
+	// Create child table with foreign key
+	ordersSQL := `
+	CREATE TABLE fk_user_orders (
+		order_id SERIAL PRIMARY KEY,
+		customer_id INTEGER NOT NULL REFERENCES fk_user_customers(id) ON DELETE CASCADE,
+		amount DECIMAL(10,2) NOT NULL,
+		order_date DATE DEFAULT CURRENT_DATE
+	);`
+
+	_, err = conn.Exec(ctx, ordersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create orders table: %v", err)
+	}
+
+	// Parse tables
+	customersTables, err := parser.ParseCreateTables(customersSQL)
+	if err != nil {
+		t.Fatalf("Failed to parse customers tables: %v", err)
+	}
+
+	ordersTables, err := parser.ParseCreateTables(ordersSQL)
+	if err != nil {
+		t.Fatalf("Failed to parse orders tables: %v", err)
+	}
+
+	if len(customersTables) != 1 || len(ordersTables) != 1 {
+		t.Fatalf("Expected 1 customers table and 1 orders table, got %d and %d", len(customersTables), len(ordersTables))
+	}
+
+	customersTable := customersTables[0]
+	ordersTable := ordersTables[0]
+
+	// Create history tables and triggers with user tracking
+	config := parser.Config{TrackUser: true, UserSource: "session"}
+
+	customersHistorySQL := parser.GenerateHistoryTable(customersTable, config)
+	_, err = conn.Exec(ctx, customersHistorySQL)
+	if err != nil {
+		t.Fatalf("Failed to create customers history table: %v", err)
+	}
+
+	customersTriggersSQL := parser.GenerateTriggers(customersTable, config)
+	_, err = conn.Exec(ctx, customersTriggersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create customers triggers: %v", err)
+	}
+
+	ordersHistorySQL := parser.GenerateHistoryTable(ordersTable, config)
+	_, err = conn.Exec(ctx, ordersHistorySQL)
+	if err != nil {
+		t.Fatalf("Failed to create orders history table: %v", err)
+	}
+
+	ordersTriggersSQL := parser.GenerateTriggers(ordersTable, config)
+	_, err = conn.Exec(ctx, ordersTriggersSQL)
+	if err != nil {
+		t.Fatalf("Failed to create orders triggers: %v", err)
+	}
+
+	// Set session user for testing
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'sales.rep@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to set session user: %v", err)
+	}
+
+	// Insert parent record
+	_, err = conn.Exec(ctx, "INSERT INTO fk_user_customers (name, email) VALUES ($1, $2)", "John Customer", "john@customer.com")
+	if err != nil {
+		t.Fatalf("Failed to insert customer: %v", err)
+	}
+
+	// Insert child record with foreign key relationship
+	_, err = conn.Exec(ctx, "INSERT INTO fk_user_orders (customer_id, amount) VALUES ($1, $2)", 1, 299.99)
+	if err != nil {
+		t.Fatalf("Failed to insert order: %v", err)
+	}
+
+	// Verify both inserts were tracked with the same user
+	var customerUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM fk_user_customers_history WHERE operation = 'I'").Scan(&customerUser)
+	if err != nil {
+		t.Fatalf("Failed to query customer tracking: %v", err)
+	}
+
+	var orderUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM fk_user_orders_history WHERE operation = 'I'").Scan(&orderUser)
+	if err != nil {
+		t.Fatalf("Failed to query order tracking: %v", err)
+	}
+
+	if customerUser != "sales.rep@company.com" {
+		t.Errorf("Expected customer changed_by to be 'sales.rep@company.com', got '%s'", customerUser)
+	}
+
+	if orderUser != "sales.rep@company.com" {
+		t.Errorf("Expected order changed_by to be 'sales.rep@company.com', got '%s'", orderUser)
+	}
+
+	// Change user and update order
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'manager@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to change session user: %v", err)
+	}
+
+	_, err = conn.Exec(ctx, "UPDATE fk_user_orders SET amount = $1 WHERE order_id = $2", 399.99, 1)
+	if err != nil {
+		t.Fatalf("Failed to update order: %v", err)
+	}
+
+	// Verify update was tracked with new user
+	var updateUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM fk_user_orders_history WHERE operation = 'U'").Scan(&updateUser)
+	if err != nil {
+		t.Fatalf("Failed to query order update tracking: %v", err)
+	}
+
+	if updateUser != "manager@company.com" {
+		t.Errorf("Expected order update changed_by to be 'manager@company.com', got '%s'", updateUser)
+	}
+
+	// Test cascading delete with user tracking
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_user', 'admin@company.com', false)")
+	if err != nil {
+		t.Fatalf("Failed to change session user for delete: %v", err)
+	}
+
+	_, err = conn.Exec(ctx, "DELETE FROM fk_user_customers WHERE id = $1", 1)
+	if err != nil {
+		t.Fatalf("Failed to delete customer: %v", err)
+	}
+
+	// Verify customer delete was tracked
+	var deleteUser string
+	err = conn.QueryRow(ctx, "SELECT changed_by FROM fk_user_customers_history WHERE operation = 'D'").Scan(&deleteUser)
+	if err != nil {
+		t.Fatalf("Failed to query customer delete tracking: %v", err)
+	}
+
+	if deleteUser != "admin@company.com" {
+		t.Errorf("Expected customer delete changed_by to be 'admin@company.com', got '%s'", deleteUser)
+	}
+
+	// Verify the order was cascaded deleted from main table
+	var remainingOrders int
+	err = conn.QueryRow(ctx, "SELECT COUNT(*) FROM fk_user_orders").Scan(&remainingOrders)
+	if err != nil {
+		t.Fatalf("Failed to count remaining orders: %v", err)
+	}
+
+	if remainingOrders != 0 {
+		t.Errorf("Expected 0 remaining orders after cascade delete, got %d", remainingOrders)
+	}
+
+	// Note: Cascaded deletes don't trigger user triggers in PostgreSQL, so we won't have
+	// a delete history record for the order. This is expected behavior.
 }

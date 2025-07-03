@@ -21,11 +21,11 @@ func GenerateHistoryTable(table Table, config Config) string {
 			cleanOptions = strings.ReplaceAll(cleanOptions, "PRIMARY KEY", "")
 			cleanOptions = strings.ReplaceAll(cleanOptions, "AUTO_INCREMENT", "")
 			cleanOptions = strings.ReplaceAll(cleanOptions, "UNIQUE", "")
-			
+
 			// Remove REFERENCES clauses (foreign keys)
 			referencePattern := `(?i)\s+REFERENCES\s+[^\s(]+\s*\([^)]+\)(?:\s+ON\s+DELETE\s+[^,\s]+)?(?:\s+ON\s+UPDATE\s+[^,\s]+)?`
 			cleanOptions = regexp.MustCompile(referencePattern).ReplaceAllString(cleanOptions, "")
-			
+
 			cleanOptions = strings.TrimSpace(cleanOptions)
 			if cleanOptions != "" {
 				sb.WriteString(" " + cleanOptions)
@@ -37,7 +37,7 @@ func GenerateHistoryTable(table Table, config Config) string {
 	sb.WriteString("    valid_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n")
 	sb.WriteString("    valid_to TIMESTAMP NULL,\n")
 	sb.WriteString("    operation CHAR(1) NOT NULL CHECK (operation IN ('I', 'U', 'D'))")
-	
+
 	if config.TrackUser {
 		sb.WriteString(",\n    changed_by VARCHAR(255)\n")
 	} else {
@@ -74,7 +74,7 @@ func GenerateTriggers(table Table, config Config) string {
 	sb.WriteString(fmt.Sprintf("-- Insert trigger for %s\n", originalTableName))
 	sb.WriteString(fmt.Sprintf("CREATE OR REPLACE FUNCTION %s_insert_history() RETURNS TRIGGER AS $$\n", GetFunctionPrefix(table)))
 	sb.WriteString("BEGIN\n")
-	
+
 	if config.TrackUser {
 		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation, changed_by)\n", historyTableName, columnsStr))
 		sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'I', %s);\n", newValuesStr, userExpression))
@@ -127,11 +127,11 @@ func GenerateTriggers(table Table, config Config) string {
 	sb.WriteString(fmt.Sprintf("-- Delete trigger for %s\n", originalTableName))
 	sb.WriteString(fmt.Sprintf("CREATE OR REPLACE FUNCTION %s_delete_history() RETURNS TRIGGER AS $$\n", GetFunctionPrefix(table)))
 	sb.WriteString("BEGIN\n")
-	
+
 	if config.TrackUser {
 		sb.WriteString(fmt.Sprintf("    UPDATE %s SET valid_to = CURRENT_TIMESTAMP\n", historyTableName))
 		sb.WriteString("    WHERE valid_to IS NULL")
-		
+
 		if len(primaryKeys) > 0 {
 			sb.WriteString(" AND ")
 			conditions := make([]string, len(primaryKeys))
@@ -141,11 +141,11 @@ func GenerateTriggers(table Table, config Config) string {
 			sb.WriteString(strings.Join(conditions, " AND "))
 		}
 		sb.WriteString(";\n")
-		
+
 		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (", historyTableName))
 		sb.WriteString(columnsStr)
 		sb.WriteString(", valid_from, operation, changed_by)\n")
-		sb.WriteString(fmt.Sprintf("    VALUES ("))
+		sb.WriteString("    VALUES (")
 		oldValues := make([]string, len(table.Columns))
 		for i, col := range table.Columns {
 			oldValues[i] = "OLD." + col.Name
@@ -155,7 +155,7 @@ func GenerateTriggers(table Table, config Config) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("    UPDATE %s SET valid_to = CURRENT_TIMESTAMP\n", historyTableName))
 		sb.WriteString("    WHERE valid_to IS NULL")
-		
+
 		if len(primaryKeys) > 0 {
 			sb.WriteString(" AND ")
 			conditions := make([]string, len(primaryKeys))
@@ -165,11 +165,11 @@ func GenerateTriggers(table Table, config Config) string {
 			sb.WriteString(strings.Join(conditions, " AND "))
 		}
 		sb.WriteString(";\n")
-		
+
 		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (", historyTableName))
 		sb.WriteString(columnsStr)
 		sb.WriteString(", valid_from, operation)\n")
-		sb.WriteString(fmt.Sprintf("    VALUES ("))
+		sb.WriteString("    VALUES (")
 		oldValues := make([]string, len(table.Columns))
 		for i, col := range table.Columns {
 			oldValues[i] = "OLD." + col.Name
@@ -264,7 +264,6 @@ func GenerateHistorySQL(tables []Table, config Config) (string, error) {
 		sb.WriteString(triggers)
 
 	}
-
 
 	return sb.String(), nil
 }

@@ -124,7 +124,8 @@ func TestGenerateHistoryTable(t *testing.T) {
 		},
 	}
 
-	result := GenerateHistoryTable(table)
+	config := Config{TrackUser: false, UserSource: "current_user"}
+	result := GenerateHistoryTable(table, config)
 
 	expectedContains := []string{
 		"CREATE TABLE users_history",
@@ -153,7 +154,8 @@ func TestGenerateTriggers(t *testing.T) {
 		},
 	}
 
-	result := GenerateTriggers(table)
+	config := Config{TrackUser: false, UserSource: "current_user"}
+	result := GenerateTriggers(table, config)
 
 	expectedContains := []string{
 		"CREATE OR REPLACE FUNCTION users_insert_history()",
@@ -258,7 +260,8 @@ func TestGenerateHistorySQL(t *testing.T) {
 		},
 	}
 
-	result, err := GenerateHistorySQL(tables)
+	config := Config{TrackUser: false, UserSource: "current_user"}
+	result, err := GenerateHistorySQL(tables, config)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -267,7 +270,6 @@ func TestGenerateHistorySQL(t *testing.T) {
 		"-- Generated History Tables and Triggers",
 		"CREATE TABLE users_history",
 		"CREATE OR REPLACE FUNCTION users_insert_history()",
-		"-- Usage Examples:",
 	}
 
 	for _, expected := range expectedContains {
