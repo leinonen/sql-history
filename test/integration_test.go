@@ -79,11 +79,11 @@ func connectToTestDB(ctx context.Context) (*pgx.Conn, error) {
 
 func testBasicHistoryTracking(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS users_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS users CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS users_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS users CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS users_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -169,12 +169,12 @@ func testBasicHistoryTracking(t *testing.T, ctx context.Context, conn *pgx.Conn)
 
 func testSchemaSupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS test_schema.products_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS test_schema.products CASCADE")
-		conn.Exec(ctx, "DROP SCHEMA IF EXISTS test_schema CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS test_schema.products_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS test_schema.products CASCADE")
+		_, _ = conn.Exec(ctx, "DROP SCHEMA IF EXISTS test_schema CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS test_schema_products_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -240,11 +240,11 @@ func testSchemaSupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 
 func testPointInTimeQueries(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS timeline_test_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS timeline_test CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS timeline_test_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS timeline_test CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS timeline_test_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -335,16 +335,16 @@ func testPointInTimeQueries(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 
 func testForeignKeySupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_orders_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_orders CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_users_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_users CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_delete_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_orders_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_orders CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_users_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_users CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_users_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_orders_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -552,11 +552,11 @@ func testForeignKeySupport(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 
 func testUserTrackingCurrentUser(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS user_tracking_test CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS user_tracking_test_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -739,11 +739,11 @@ func testUserTrackingCurrentUser(t *testing.T, ctx context.Context, conn *pgx.Co
 
 func testUserTrackingSession(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS session_tracking_test CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS session_tracking_test_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -876,12 +876,12 @@ func testUserTrackingSession(t *testing.T, ctx context.Context, conn *pgx.Conn) 
 
 func testUserTrackingWithSchema(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test CASCADE")
-		conn.Exec(ctx, "DROP SCHEMA IF EXISTS tracking_schema CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS tracking_schema.schema_test CASCADE")
+		_, _ = conn.Exec(ctx, "DROP SCHEMA IF EXISTS tracking_schema CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS tracking_schema_schema_test_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
@@ -970,16 +970,16 @@ func testUserTrackingWithSchema(t *testing.T, ctx context.Context, conn *pgx.Con
 
 func testUserTrackingWithForeignKeys(t *testing.T, ctx context.Context, conn *pgx.Conn) {
 	cleanup := func() {
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers_history CASCADE")
-		conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_delete_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_insert_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_update_history() CASCADE")
-		conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_orders CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers_history CASCADE")
+		_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS fk_user_customers CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_customers_delete_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_insert_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_update_history() CASCADE")
+		_, _ = conn.Exec(ctx, "DROP FUNCTION IF EXISTS fk_user_orders_delete_history() CASCADE")
 	}
 	cleanup()
 	defer cleanup()
