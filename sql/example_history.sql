@@ -61,18 +61,6 @@ CREATE TRIGGER users_delete_trigger
     FOR EACH ROW
     EXECUTE FUNCTION users_delete_history();
 
--- Example: Query users state at a specific point in time
--- Replace '2024-01-01 12:00:00' with your desired timestamp
-SELECT * FROM users_history 
-WHERE valid_from <= '2024-01-01 12:00:00' 
-  AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
-  AND operation != 'D';
-
--- Example: Query users state as of now (current active records)
-SELECT * FROM users_history 
-WHERE valid_to IS NULL 
-  AND operation != 'D';
-
 
 --------------------------------------------------------------------------------
 
@@ -135,18 +123,6 @@ CREATE TRIGGER users_delete_trigger
     BEFORE DELETE ON users
     FOR EACH ROW
     EXECUTE FUNCTION users_delete_history();
-
--- Example: Query users state at a specific point in time
--- Replace '2024-01-01 12:00:00' with your desired timestamp
-SELECT * FROM users_history 
-WHERE valid_from <= '2024-01-01 12:00:00' 
-  AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
-  AND operation != 'D';
-
--- Example: Query users state as of now (current active records)
-SELECT * FROM users_history 
-WHERE valid_to IS NULL 
-  AND operation != 'D';
 
 
 --------------------------------------------------------------------------------
@@ -212,18 +188,6 @@ CREATE TRIGGER products_delete_trigger
     FOR EACH ROW
     EXECUTE FUNCTION products_delete_history();
 
--- Example: Query products state at a specific point in time
--- Replace '2024-01-01 12:00:00' with your desired timestamp
-SELECT * FROM products_history 
-WHERE valid_from <= '2024-01-01 12:00:00' 
-  AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
-  AND operation != 'D';
-
--- Example: Query products state as of now (current active records)
-SELECT * FROM products_history 
-WHERE valid_to IS NULL 
-  AND operation != 'D';
-
 
 --------------------------------------------------------------------------------
 
@@ -287,22 +251,3 @@ CREATE TRIGGER orders_delete_trigger
     FOR EACH ROW
     EXECUTE FUNCTION orders_delete_history();
 
--- Example: Query orders state at a specific point in time
--- Replace '2024-01-01 12:00:00' with your desired timestamp
-SELECT * FROM orders_history 
-WHERE valid_from <= '2024-01-01 12:00:00' 
-  AND (valid_to IS NULL OR valid_to > '2024-01-01 12:00:00')
-  AND operation != 'D';
-
--- Example: Query orders state as of now (current active records)
-SELECT * FROM orders_history 
-WHERE valid_to IS NULL 
-  AND operation != 'D';
-
-
--- Usage Examples:
--- 1. The history tables automatically track all changes via triggers
--- 2. Use the point-in-time queries above to view data as it existed at any timestamp
--- 3. The 'operation' column indicates: 'I'=Insert, 'U'=Update, 'D'=Delete
--- 4. valid_from shows when the record became active
--- 5. valid_to shows when the record was superseded (NULL = still active)

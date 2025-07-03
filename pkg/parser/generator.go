@@ -2,10 +2,11 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
-func GenerateHistoryTable(table Table) string {
+func GenerateHistoryTable(table Table, config Config) string {
 	var sb strings.Builder
 
 	historyTableName := GetHistoryTableName(table)
@@ -14,10 +15,17 @@ func GenerateHistoryTable(table Table) string {
 
 	for _, col := range table.Columns {
 		sb.WriteString(fmt.Sprintf("    %s %s", col.Name, col.DataType))
-		if col.Options != "" && !strings.Contains(strings.ToUpper(col.Options), "PRIMARY KEY") &&
-			!strings.Contains(strings.ToUpper(col.Options), "AUTO_INCREMENT") {
-			cleanOptions := strings.ReplaceAll(col.Options, "PRIMARY KEY", "")
+		if col.Options != "" {
+			// Remove constraints that don't make sense in history tables
+			cleanOptions := col.Options
+			cleanOptions = strings.ReplaceAll(cleanOptions, "PRIMARY KEY", "")
 			cleanOptions = strings.ReplaceAll(cleanOptions, "AUTO_INCREMENT", "")
+			cleanOptions = strings.ReplaceAll(cleanOptions, "UNIQUE", "")
+			
+			// Remove REFERENCES clauses (foreign keys)
+			referencePattern := `(?i)\s+REFERENCES\s+[^\s(]+\s*\([^)]+\)(?:\s+ON\s+DELETE\s+[^,\s]+)?(?:\s+ON\s+UPDATE\s+[^,\s]+)?`
+			cleanOptions = regexp.MustCompile(referencePattern).ReplaceAllString(cleanOptions, "")
+			
 			cleanOptions = strings.TrimSpace(cleanOptions)
 			if cleanOptions != "" {
 				sb.WriteString(" " + cleanOptions)
@@ -28,7 +36,13 @@ func GenerateHistoryTable(table Table) string {
 
 	sb.WriteString("    valid_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n")
 	sb.WriteString("    valid_to TIMESTAMP NULL,\n")
-	sb.WriteString("    operation CHAR(1) NOT NULL CHECK (operation IN ('I', 'U', 'D'))\n")
+	sb.WriteString("    operation CHAR(1) NOT NULL CHECK (operation IN ('I', 'U', 'D'))")
+	
+	if config.TrackUser {
+		sb.WriteString(",\n    changed_by VARCHAR(255)\n")
+	} else {
+		sb.WriteString("\n")
+	}
 	sb.WriteString(");\n\n")
 
 	indexPrefix := getIndexPrefix(table)
@@ -38,7 +52,7 @@ func GenerateHistoryTable(table Table) string {
 	return sb.String()
 }
 
-func GenerateTriggers(table Table) string {
+func GenerateTriggers(table Table, config Config) string {
 	var sb strings.Builder
 
 	historyTableName := GetHistoryTableName(table)
@@ -55,11 +69,19 @@ func GenerateTriggers(table Table) string {
 	columnsStr := strings.Join(columnNames, ", ")
 	newValuesStr := strings.Join(newValues, ", ")
 
+	userExpression := getUserExpression(config)
+
 	sb.WriteString(fmt.Sprintf("-- Insert trigger for %s\n", originalTableName))
 	sb.WriteString(fmt.Sprintf("CREATE OR REPLACE FUNCTION %s_insert_history() RETURNS TRIGGER AS $$\n", GetFunctionPrefix(table)))
 	sb.WriteString("BEGIN\n")
-	sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation)\n", historyTableName, columnsStr))
-	sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'I');\n", newValuesStr))
+	
+	if config.TrackUser {
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation, changed_by)\n", historyTableName, columnsStr))
+		sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'I', %s);\n", newValuesStr, userExpression))
+	} else {
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation)\n", historyTableName, columnsStr))
+		sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'I');\n", newValuesStr))
+	}
 	sb.WriteString("    RETURN NEW;\n")
 	sb.WriteString("END;\n")
 	sb.WriteString("$$ LANGUAGE plpgsql;\n\n")
@@ -86,8 +108,13 @@ func GenerateTriggers(table Table) string {
 	}
 	sb.WriteString(";\n")
 
-	sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation)\n", historyTableName, columnsStr))
-	sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'U');\n", newValuesStr))
+	if config.TrackUser {
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation, changed_by)\n", historyTableName, columnsStr))
+		sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'U', %s);\n", newValuesStr, userExpression))
+	} else {
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (%s, valid_from, operation)\n", historyTableName, columnsStr))
+		sb.WriteString(fmt.Sprintf("    VALUES (%s, CURRENT_TIMESTAMP, 'U');\n", newValuesStr))
+	}
 	sb.WriteString("    RETURN NEW;\n")
 	sb.WriteString("END;\n")
 	sb.WriteString("$$ LANGUAGE plpgsql;\n\n")
@@ -100,18 +127,56 @@ func GenerateTriggers(table Table) string {
 	sb.WriteString(fmt.Sprintf("-- Delete trigger for %s\n", originalTableName))
 	sb.WriteString(fmt.Sprintf("CREATE OR REPLACE FUNCTION %s_delete_history() RETURNS TRIGGER AS $$\n", GetFunctionPrefix(table)))
 	sb.WriteString("BEGIN\n")
-	sb.WriteString(fmt.Sprintf("    UPDATE %s SET valid_to = CURRENT_TIMESTAMP, operation = 'D'\n", historyTableName))
-	sb.WriteString("    WHERE valid_to IS NULL")
-
-	if len(primaryKeys) > 0 {
-		sb.WriteString(" AND ")
-		conditions := make([]string, len(primaryKeys))
-		for i, pk := range primaryKeys {
-			conditions[i] = fmt.Sprintf("%s = OLD.%s", pk, pk)
+	
+	if config.TrackUser {
+		sb.WriteString(fmt.Sprintf("    UPDATE %s SET valid_to = CURRENT_TIMESTAMP\n", historyTableName))
+		sb.WriteString("    WHERE valid_to IS NULL")
+		
+		if len(primaryKeys) > 0 {
+			sb.WriteString(" AND ")
+			conditions := make([]string, len(primaryKeys))
+			for i, pk := range primaryKeys {
+				conditions[i] = fmt.Sprintf("%s = OLD.%s", pk, pk)
+			}
+			sb.WriteString(strings.Join(conditions, " AND "))
 		}
-		sb.WriteString(strings.Join(conditions, " AND "))
+		sb.WriteString(";\n")
+		
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (", historyTableName))
+		sb.WriteString(columnsStr)
+		sb.WriteString(", valid_from, operation, changed_by)\n")
+		sb.WriteString(fmt.Sprintf("    VALUES ("))
+		oldValues := make([]string, len(table.Columns))
+		for i, col := range table.Columns {
+			oldValues[i] = "OLD." + col.Name
+		}
+		sb.WriteString(strings.Join(oldValues, ", "))
+		sb.WriteString(fmt.Sprintf(", CURRENT_TIMESTAMP, 'D', %s);\n", userExpression))
+	} else {
+		sb.WriteString(fmt.Sprintf("    UPDATE %s SET valid_to = CURRENT_TIMESTAMP\n", historyTableName))
+		sb.WriteString("    WHERE valid_to IS NULL")
+		
+		if len(primaryKeys) > 0 {
+			sb.WriteString(" AND ")
+			conditions := make([]string, len(primaryKeys))
+			for i, pk := range primaryKeys {
+				conditions[i] = fmt.Sprintf("%s = OLD.%s", pk, pk)
+			}
+			sb.WriteString(strings.Join(conditions, " AND "))
+		}
+		sb.WriteString(";\n")
+		
+		sb.WriteString(fmt.Sprintf("    INSERT INTO %s (", historyTableName))
+		sb.WriteString(columnsStr)
+		sb.WriteString(", valid_from, operation)\n")
+		sb.WriteString(fmt.Sprintf("    VALUES ("))
+		oldValues := make([]string, len(table.Columns))
+		for i, col := range table.Columns {
+			oldValues[i] = "OLD." + col.Name
+		}
+		sb.WriteString(strings.Join(oldValues, ", "))
+		sb.WriteString(", CURRENT_TIMESTAMP, 'D');\n")
 	}
-	sb.WriteString(";\n")
 	sb.WriteString("    RETURN OLD;\n")
 	sb.WriteString("END;\n")
 	sb.WriteString("$$ LANGUAGE plpgsql;\n\n")
@@ -171,7 +236,14 @@ func getIndexPrefix(table Table) string {
 	return table.Name
 }
 
-func GenerateHistorySQL(tables []Table) (string, error) {
+func getUserExpression(config Config) string {
+	if config.UserSource == "session" {
+		return "COALESCE(current_setting('app.current_user', true), current_user)"
+	}
+	return "current_user"
+}
+
+func GenerateHistorySQL(tables []Table, config Config) (string, error) {
 	var sb strings.Builder
 
 	sb.WriteString("-- Generated History Tables and Triggers\n")
@@ -184,11 +256,11 @@ func GenerateHistorySQL(tables []Table) (string, error) {
 
 		sb.WriteString(fmt.Sprintf("-- History table and triggers for: %s\n\n", GetOriginalTableName(table)))
 
-		historyTable := GenerateHistoryTable(table)
+		historyTable := GenerateHistoryTable(table, config)
 		sb.WriteString(historyTable)
 		sb.WriteString("\n")
 
-		triggers := GenerateTriggers(table)
+		triggers := GenerateTriggers(table, config)
 		sb.WriteString(triggers)
 
 	}

@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type Config struct {
+	TrackUser  bool
+	UserSource string
+}
+
 type Table struct {
 	Name        string
 	SchemaName  string
