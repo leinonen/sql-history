@@ -88,7 +88,48 @@ make build              # Build binary
 make test               # Run all tests
 make test-integration   # Integration tests (requires Docker)
 make docker-up          # Start PostgreSQL for testing
+make build-all          # Build cross-platform binaries
+make release            # Prepare release (test + build-all)
 ```
+
+## Release Management
+
+This project uses automated releases via GitHub Actions. Here's how to manage releases:
+
+### Creating a Release
+
+1. **Prepare the release**:
+   ```bash
+   make release  # Runs tests and builds all platforms
+   ```
+
+2. **Update version and create tag**:
+   ```bash
+   make release-tag  # Interactive - prompts for version number
+   ```
+
+3. **Automated process**: Once the tag is pushed, GitHub Actions will:
+   - Run full test suite
+   - Build cross-platform binaries (Linux, macOS, Windows)
+   - Create GitHub release with binaries
+   - Generate release notes
+
+### Release Process
+
+- **Semantic Versioning**: Use `v1.2.3` format
+- **Automated Builds**: GitHub Actions builds for Linux, macOS, and Windows
+- **Release Notes**: Auto-generated from tag and commit history
+- **Binaries**: Available for download from GitHub releases
+
+### Manual Release Steps
+
+If you need to create a release manually:
+
+1. Update version in `cmd/sql-history/main.go`
+2. Update `CHANGELOG.md` with new version
+3. Commit changes: `git commit -m "Bump version to v1.x.x"`
+4. Create and push tag: `git tag -a v1.x.x -m "Release v1.x.x" && git push origin v1.x.x`
+5. GitHub Actions will handle the rest
 
 ## Usage
 

@@ -66,3 +66,25 @@ lint:
 # Format the code
 fmt:
 	go fmt ./...
+
+# Build for multiple platforms
+build-all:
+	mkdir -p dist
+	GOOS=linux GOARCH=amd64 go build -o dist/sql-history-linux-amd64 cmd/sql-history/main.go
+	GOOS=linux GOARCH=arm64 go build -o dist/sql-history-linux-arm64 cmd/sql-history/main.go
+	GOOS=darwin GOARCH=amd64 go build -o dist/sql-history-darwin-amd64 cmd/sql-history/main.go
+	GOOS=darwin GOARCH=arm64 go build -o dist/sql-history-darwin-arm64 cmd/sql-history/main.go
+	GOOS=windows GOARCH=amd64 go build -o dist/sql-history-windows-amd64.exe cmd/sql-history/main.go
+
+# Create a release tag
+release-tag:
+	@echo "Current version: $(shell git describe --tags --abbrev=0 2>/dev/null || echo 'No tags found')"
+	@echo "Enter new version (e.g., v1.1.0):"
+	@read version && \
+	git tag -a "$$version" -m "Release $$version" && \
+	git push origin "$$version" && \
+	echo "Tagged and pushed $$version"
+
+# Prepare release (run tests, build, and create tag)
+release: ci build-all
+	@echo "Release preparation complete. Run 'make release-tag' to create and push the tag."

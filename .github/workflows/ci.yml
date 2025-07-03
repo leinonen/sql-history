@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install dependencies
+      run: go mod tidy
+    
+    - name: Run unit tests
+      run: go test -v -short ./pkg/...
+    
+    - name: Run integration tests
+      run: go test -v ./test/...
+      env:
+        TEST_DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb?sslmode=disable
+    
+    - name: Build
+      run: go build -o bin/sql-history cmd/sql-history/main.go
+    
+    - name: Test CLI
+      run: |
+        ./bin/sql-history --version
+        ./bin/sql-history --help || true  # help returns exit code 1
+    
+    - name: Lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest

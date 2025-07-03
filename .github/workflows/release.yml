@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install dependencies
+      run: go mod tidy
+    
+    - name: Run unit tests
+      run: go test -v -short ./pkg/...
+    
+    - name: Run integration tests
+      run: go test -v ./test/...
+      env:
+        TEST_DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb?sslmode=disable
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Build binary
+      run: |
+        mkdir -p dist
+        GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/sql-history-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} cmd/sql-history/main.go
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: sql-history-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/sql-history-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: dist
+    
+    - name: Prepare release assets
+      run: |
+        mkdir -p release
+        for dir in dist/*/; do
+          cp "$dir"* release/
+        done
+        ls -la release/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*
+        body: |
+          ## SQL History Table Generator ${{ github.ref_name }}
+          
+          Cross-platform CLI tool for generating PostgreSQL history tables with temporal tracking.
+          
+          ### Features
+          
+          - **History Tables**: Automatic generation with `valid_from`, `valid_to`, `operation` columns
+          - **User Tracking**: Optional `changed_by` column to track who made changes (`--track-user` flag)
+          - **Triggers**: INSERT/UPDATE/DELETE triggers for automatic tracking
+          - **Foreign Keys**: Parses and preserves relationships (inline and explicit syntax)
+          - **Schemas**: Supports schema-qualified table names
+          - **Point-in-Time Queries**: Generated examples for temporal data access
+          
+          ### Usage
+          
+          ```bash
+          # Basic usage
+          ./sql-history schema.sql
+          
+          # With user tracking
+          ./sql-history --track-user schema.sql
+          
+          # Custom output file
+          ./sql-history input.sql output.sql
+          
+          # Show version
+          ./sql-history --version
+          ```
+          
+          ### Installation
+          
+          Download the binary for your platform:
+          
+          - **Linux x64**: `sql-history-linux-amd64`
+          - **Linux ARM64**: `sql-history-linux-arm64`
+          - **macOS x64**: `sql-history-darwin-amd64`
+          - **macOS ARM64**: `sql-history-darwin-arm64`
+          - **Windows x64**: `sql-history-windows-amd64.exe`
+          
+          Make the binary executable (Linux/macOS): `chmod +x sql-history-*`
+        draft: false
+        prerelease: false
