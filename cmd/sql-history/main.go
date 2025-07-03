@@ -11,13 +11,22 @@ import (
 	"github.com/leinonen/sql-history/pkg/parser"
 )
 
+var version = "1.0.0"
+
 func main() {
 	var trackUser bool
 	var userSource string
+	var showVersion bool
 	
 	flag.BoolVar(&trackUser, "track-user", false, "Add user tracking to history tables")
 	flag.StringVar(&userSource, "user-source", "current_user", "Source for user info: 'current_user' or 'session'")
+	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("sql-history version %s\n", version)
+		os.Exit(0)
+	}
 
 	args := flag.Args()
 	if len(args) < 1 {
@@ -27,6 +36,7 @@ func main() {
 		fmt.Println("\nFlags:")
 		fmt.Println("  --track-user        Add user tracking to history tables")
 		fmt.Println("  --user-source       Source for user info: 'current_user' or 'session' (default: current_user)")
+		fmt.Println("  --version           Show version information")
 		os.Exit(1)
 	}
 
